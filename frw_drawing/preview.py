@@ -42,9 +42,9 @@ def contour_path(loop):
     return chain
 
 
-def main(out):
+def main(prims, out):
     fig, ax = plt.subplots(figsize=(16, 9))
-    for p in build():
+    for p in prims:
         k = p[0]
         if k == "line":
             ax.plot([p[1], p[3]], [p[2], p[4]], color="k", lw=LW[p[5]], ls=LS[p[5]])
@@ -68,4 +68,4 @@ def main(out):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "preview.png")
+    main(build(), sys.argv[1] if len(sys.argv) > 1 else "preview.png")

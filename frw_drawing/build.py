@@ -1,4 +1,4 @@
-"""Собирает из geometry.py: DXF для КОМПАС, макрос КОМПАС-3D (создаёт .frw) и PNG-превью.
+"""Собирает для каждого варианта (geometry.py, variant10.py): DXF для КОМПАС, макрос КОМПАС-3D (создаёт .frw) и PNG-превью.
 
     python build.py
 """
@@ -7,10 +7,16 @@ import os
 
 import ezdxf
 
-from geometry import AXIAL, MAIN, THIN, build
+import geometry
+import variant10
+from geometry import AXIAL, MAIN, THIN
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-NAME = "Вариант1"
+# имя файла -> (заголовок, функция построения, суффикс макроса/превью)
+VARIANTS = {
+    "Вариант1": ("«Вариант 1» (Гитара + Корпус)", geometry.build, "v1"),
+    "Вариант10": ("«Вариант 10» (Серьга + Корпус)", variant10.build, "v10"),
+}
 
 
 def rounded(p):
@@ -82,7 +88,7 @@ def write_dxf(prims, path):
 
 # ------------------------------------------------------- макрос КОМПАС-3D
 MACRO = '''# -*- coding: utf-8 -*-
-"""Макрос для КОМПАС-3D: строит чертёж «Вариант 1» (Гитара + Корпус) во фрагменте
+"""Макрос для КОМПАС-3D: строит чертёж {title} во фрагменте
 и сохраняет его как {name}.frw.
 
 Запуск:
@@ -155,16 +161,17 @@ main()
 '''
 
 
-def write_macro(prims, path):
+def write_macro(prims, path, name, title):
     body = "[\n" + "".join("    %r,\n" % (rounded(p),) for p in prims) + "]"
     with open(path, "w", encoding="utf-8") as f:
-        f.write(MACRO.format(name=NAME, script=os.path.basename(path), prims=body))
+        f.write(MACRO.format(name=name, title=title, script=os.path.basename(path), prims=body))
 
 
 if __name__ == "__main__":
-    prims = build()
-    write_dxf(prims, os.path.join(HERE, NAME + ".dxf"))
-    write_macro(prims, os.path.join(HERE, "kompas_macro.py"))
     import preview
-    preview.main(os.path.join(HERE, "preview.png"))
+    for name, (title, build, tag) in VARIANTS.items():
+        prims = build()
+        write_dxf(prims, os.path.join(HERE, name + ".dxf"))
+        write_macro(prims, os.path.join(HERE, "kompas_macro_%s.py" % tag), name, title)
+        preview.main(prims, os.path.join(HERE, "preview_%s.png" % tag))
     print("ok")
