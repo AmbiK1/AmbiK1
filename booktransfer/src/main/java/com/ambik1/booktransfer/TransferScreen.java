@@ -540,12 +540,16 @@ public class TransferScreen extends Screen {
 		if (this.input != null) {
 			draft = this.input.getValue();
 			MultilineTextField field = field();
+			int cursor = field.cursor();
 			if (field.hasSelection()) {
-				MultilineTextField.StringView sel = field.getSelected();
-				selectionStart = sel.beginIndex();
-				selectionEnd = sel.endIndex();
+				// Курсор стоит на одном из концов выделения — второй конец находим по тексту.
+				String sel = field.getSelectedText();
+				String value = field.value();
+				boolean endsAtCursor = cursor >= sel.length() && value.startsWith(sel, cursor - sel.length());
+				selectionStart = endsAtCursor ? cursor - sel.length() : cursor + sel.length();
+				selectionEnd = cursor;
 			} else {
-				selectionStart = selectionEnd = field.cursor();
+				selectionStart = selectionEnd = cursor;
 			}
 		}
 		super.removed();
