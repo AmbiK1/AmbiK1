@@ -27,32 +27,13 @@ jobs:
       - name: Dump vanilla API (temporary)
         if: always()
         run: |
-          JAR=$(find ~/.gradle .gradle -name 'minecraft*.jar' 2>/dev/null | grep -v sources | head -50)
-          echo "$JAR"
-          CP=$(echo "$JAR" | tr '\n' ':')
-          for c in \
-            net.minecraft.client.gui.screens.inventory.BookEditScreen \
-            net.minecraft.client.gui.components.MultiLineEditBox \
-            'net.minecraft.client.gui.components.MultiLineEditBox$Builder' \
-            net.minecraft.client.gui.components.MultilineTextField \
-            net.minecraft.client.gui.components.AbstractTextAreaWidget \
-            net.minecraft.client.gui.components.MultiLineTextWidget \
-            net.minecraft.client.gui.components.StringWidget \
-            net.minecraft.client.gui.components.EditBox \
-            net.minecraft.client.gui.GuiGraphicsExtractor \
-            net.minecraft.client.gui.Font \
-            net.minecraft.client.StringSplitter \
-            net.minecraft.network.protocol.game.ServerboundEditBookPacket \
-            net.minecraft.world.item.component.WritableBookContent \
-            net.minecraft.server.network.Filterable \
-            net.minecraft.world.entity.player.Inventory \
-            net.minecraft.client.KeyboardHandler \
-            net.minecraft.client.gui.screens.Screen \
-            net.minecraft.client.player.LocalPlayer \
-            net.minecraft.client.gui.components.Button \
-            ; do echo "=== $c"; javap -cp "$CP" -public "$c" || true; done
-          echo "=== book-related classes"
-          for j in $JAR; do unzip -l "$j" | grep -iE 'book|MultiLine' | head -40; done
+          CP=$(find ~/.gradle -name 'minecraft-merged-deobf*.jar' | head -1)
+          echo "=== P BookEditScreen"; javap -cp "$CP" -p -constants net.minecraft.client.gui.screens.inventory.BookEditScreen
+          echo "=== C BookEditScreen"; javap -cp "$CP" -p -c net.minecraft.client.gui.screens.inventory.BookEditScreen | grep -E "^  [a-z].*\(|invoke|getstatic|bipush|sipush|ldc" | head -400
+          echo "=== P BookViewScreen"; javap -cp "$CP" -p -constants net.minecraft.client.gui.screens.inventory.BookViewScreen
+          echo "=== P MultiLineEditBox"; javap -cp "$CP" -p net.minecraft.client.gui.components.MultiLineEditBox
+          echo "=== C Server book"; javap -cp "$CP" -p -c net.minecraft.server.network.ServerGamePacketListenerImpl | awk '/handleEditBook|updateBookContents|updateBookPages|signBook/{f=1} f{print} /^$/{f=0}' | grep -E "^  [a-z].*\(|invoke" | head -120
+          echo "=== C MultilineTextField insert"; javap -cp "$CP" -p -c net.minecraft.client.gui.components.MultilineTextField | awk '/public void insertText/{f=1} f{print} /return$/{if(f)exit}' | grep invoke
       - uses: actions/upload-artifact@v4
         if: success()
         with:
