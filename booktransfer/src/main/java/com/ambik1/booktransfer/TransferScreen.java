@@ -28,6 +28,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.WritableBookContent;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -46,6 +47,8 @@ public class TransferScreen extends Screen {
 	private static final int WHITE = 0xFFFFFFFF;
 	private static final int GRAY = 0xFFA0A0A0;
 	private static final int RED = 0xFFFF6060;
+	private static final int YELLOW = 0xFFFFD060;
+	private static final int MAX_PAGES = WritableBookContent.MAX_PAGES;
 	private static final String COLOR_CODES = "0123456789abcdef";
 	private static final int[] COLOR_RGB = {
 			0x000000, 0x0000AA, 0x00AA00, 0x00AAAA, 0xAA0000, 0xAA00AA, 0xFFAA00, 0xAAAAAA,
@@ -54,14 +57,15 @@ public class TransferScreen extends Screen {
 
 	// Сохраняется между открытиями экрана в рамках одной игры.
 	private static String draft = "";
-	private static boolean appendMode;
-	private static boolean formatting = true;
-	private static boolean upsideDown;
 	private static boolean continued;
+	// Позиция курсора и выделение, чтобы вернуться к ним после экрана эффектов/настроек.
+	private static int selectionStart = -1;
+	private static int selectionEnd = -1;
 
 	private final Screen parent;
 	private final InteractionHand hand;
 	private final int existingPages;
+	private final int spareBooks;
 
 	private MultiLineEditBox input;
 	private EditBox titleBox;
@@ -76,18 +80,16 @@ public class TransferScreen extends Screen {
 	private int previewPage;
 	private boolean dirty = true;
 	private int idleTicks;
+	private Component notice;
 
 	public TransferScreen(Screen parent, InteractionHand hand) {
 		super(Component.translatable("booktransfer.screen.title"));
 		this.parent = parent;
 		this.hand = hand;
-		this.existingPages = countExistingPages();
-	}
-
-	private int countExistingPages() {
 		LocalPlayer player = net.minecraft.client.Minecraft.getInstance().player;
-		if (player == null) return 0;
-		return existingPageTexts(player.getItemInHand(hand)).size();
+		this.existingPages = player == null ? 0 : existingPageTexts(player.getItemInHand(hand)).size();
+		this.spareBooks = player == null ? 0 : findSpareBooks(player).size();
+		if (!ModConfig.get().rememberDraft && !continued) draft = "";
 	}
 
 	private static List<String> existingPageTexts(ItemStack stack) {
@@ -102,6 +104,26 @@ public class TransferScreen extends Screen {
 		return result;
 	}
 
+	private int bookSlot(LocalPlayer player) {
+		return this.hand == InteractionHand.MAIN_HAND ? player.getInventory().getSelectedSlot() : Inventory.SLOT_OFFHAND;
+	}
+
+	/** Пустые книги с пером на хотбаре и во второй руке — для следующих томов. */
+	private List<Integer> findSpareBooks(LocalPlayer player) {
+		List<Integer> slots = new ArrayList<>();
+		int current = bookSlot(player);
+		Inventory inv = player.getInventory();
+		for (int slot = 0; slot < Inventory.getSelectionSize(); slot++) {
+			if (slot != current && isEmptyBook(inv.getItem(slot))) slots.add(slot);
+		}
+		if (current != Inventory.SLOT_OFFHAND && isEmptyBook(player.getOffhandItem())) slots.add(Inventory.SLOT_OFFHAND);
+		return slots;
+	}
+
+	private static boolean isEmptyBook(ItemStack stack) {
+		return stack.is(Items.WRITABLE_BOOK) && existingPageTexts(stack).isEmpty();
+	}
+
 	// ---------- раскладка ----------
 
 	private int panelX() {
@@ -114,17 +136,26 @@ public class TransferScreen extends Screen {
 
 	@Override
 	protected void init() {
+		ModConfig cfg = ModConfig.get();
 		int leftW = leftWidth();
 
-		// Ряд 1: стили.
+		// Ряд 1: стили и инструменты.
 		int x = MARGIN;
-		x = addFormatButton(x, "B", ChatFormatting.BOLD, "booktransfer.format.bold", "**", "**");
-		x = addFormatButton(x, "I", ChatFormatting.ITALIC, "booktransfer.format.italic", "*", "*");
-		x = addFormatButton(x, "S", ChatFormatting.STRIKETHROUGH, "booktransfer.format.strike", "~~", "~~");
-		x = addFormatButton(x, "U", ChatFormatting.UNDERLINE, "booktransfer.format.underline", "__", "__");
-		x = addFormatButton(x, "K", ChatFormatting.OBFUSCATED, "booktransfer.format.obfuscated", "||", "||");
-		x = addFormatButton(x, "R", ChatFormatting.RESET, "booktransfer.format.reset", "&r", "");
-		addFormatButton(x, "¶", ChatFormatting.RESET, "booktransfer.format.pagebreak", "\n" + BookPaginator.PAGE_BREAK + "\n", "");
+		x = addToolButton(x, Component.literal("B").withStyle(ChatFormatting.BOLD), "booktransfer.format.bold", () -> insert("**", "**"));
+		x = addToolButton(x, Component.literal("I").withStyle(ChatFormatting.ITALIC), "booktransfer.format.italic", () -> insert("*", "*"));
+		x = addToolButton(x, Component.literal("S").withStyle(ChatFormatting.STRIKETHROUGH), "booktransfer.format.strike", () -> insert("~~", "~~"));
+		x = addToolButton(x, Component.literal("U").withStyle(ChatFormatting.UNDERLINE), "booktransfer.format.underline", () -> insert("__", "__"));
+		x = addToolButton(x, Component.literal("K").withStyle(ChatFormatting.OBFUSCATED), "booktransfer.format.obfuscated", () -> insert("||", "||"));
+		x = addToolButton(x, Component.literal("R"), "booktransfer.format.reset", () -> insert("&r", ""));
+		x = addToolButton(x, Component.literal("¶"), "booktransfer.format.pagebreak", () -> insert("\n" + BookPaginator.PAGE_BREAK + "\n", ""));
+		x = addToolButton(x, Component.literal("★").withStyle(ChatFormatting.GOLD), "booktransfer.button.effects",
+				() -> this.minecraft.gui.setScreen(new EffectsScreen(this)));
+		x = addToolButton(x, Component.literal("⚙"), "booktransfer.button.settings",
+				() -> this.minecraft.gui.setScreen(new ConfigScreen(this)));
+		this.addRenderableWidget(Button.builder(Component.translatable("booktransfer.button.file"), b -> openFileDialog())
+				.pos(x, 6).size(40, 20)
+				.tooltip(Tooltip.create(Component.translatable("booktransfer.button.file.tooltip")))
+				.build());
 
 		// Ряд 2: цвета.
 		int colorSize = 14;
@@ -158,7 +189,8 @@ public class TransferScreen extends Screen {
 		int rowA = this.height - 50;
 		int optW = (leftW - 6) / 4;
 		this.modeButton = this.addRenderableWidget(Button.builder(Component.empty(), b -> {
-					appendMode = !appendMode;
+					cfg.appendMode = !cfg.appendMode;
+					cfg.save();
 					updateOptionLabels();
 					markDirty();
 				})
@@ -166,7 +198,8 @@ public class TransferScreen extends Screen {
 				.tooltip(Tooltip.create(Component.translatable("booktransfer.option.mode.tooltip")))
 				.build());
 		this.formatButton = this.addRenderableWidget(Button.builder(Component.empty(), b -> {
-					formatting = !formatting;
+					cfg.formatting = !cfg.formatting;
+					cfg.save();
 					updateOptionLabels();
 					markDirty();
 				})
@@ -174,7 +207,8 @@ public class TransferScreen extends Screen {
 				.tooltip(Tooltip.create(Component.translatable("booktransfer.option.format.tooltip")))
 				.build());
 		this.flipButton = this.addRenderableWidget(Button.builder(Component.empty(), b -> {
-					upsideDown = !upsideDown;
+					cfg.upsideDown = !cfg.upsideDown;
+					cfg.save();
 					updateOptionLabels();
 					markDirty();
 				})
@@ -184,6 +218,7 @@ public class TransferScreen extends Screen {
 		this.addRenderableWidget(Button.builder(Component.translatable("booktransfer.button.clear"), b -> {
 					this.input.setValue("");
 					continued = false;
+					this.notice = null;
 					this.setFocused(this.input);
 				})
 				.pos(MARGIN + (optW + 2) * 3, rowA).size(optW, 20)
@@ -222,12 +257,29 @@ public class TransferScreen extends Screen {
 		updateOptionLabels();
 		updateSignButton();
 		recompute();
+		restoreSelection();
 		this.setInitialFocus(this.input);
 	}
 
-	private int addFormatButton(int x, String label, ChatFormatting style, String tooltipKey, String before, String after) {
-		Component text = style == ChatFormatting.RESET ? Component.literal(label) : Component.literal(label).withStyle(style);
-		this.addRenderableWidget(Button.builder(text, b -> insert(before, after))
+	private MultilineTextField field() {
+		return ((MultiLineEditBoxAccessor) this.input).booktransfer$getTextField();
+	}
+
+	private void restoreSelection() {
+		if (selectionStart < 0) return;
+		int len = this.input.getValue().length();
+		MultilineTextField field = field();
+		field.seekCursor(Whence.ABSOLUTE, Math.min(selectionStart, len));
+		if (selectionEnd != selectionStart) {
+			field.setSelecting(true);
+			field.seekCursor(Whence.ABSOLUTE, Math.min(selectionEnd, len));
+			field.setSelecting(false);
+		}
+		selectionStart = selectionEnd = -1;
+	}
+
+	private int addToolButton(int x, Component label, String tooltipKey, Runnable action) {
+		this.addRenderableWidget(Button.builder(label, b -> action.run())
 				.pos(x, 6).size(20, 20)
 				.tooltip(Tooltip.create(Component.translatable(tooltipKey)))
 				.build());
@@ -235,9 +287,10 @@ public class TransferScreen extends Screen {
 	}
 
 	private void updateOptionLabels() {
-		this.modeButton.setMessage(Component.translatable(appendMode ? "booktransfer.option.mode.append" : "booktransfer.option.mode.replace"));
-		this.formatButton.setMessage(Component.translatable(formatting ? "booktransfer.option.format.on" : "booktransfer.option.format.off"));
-		this.flipButton.setMessage(Component.translatable(upsideDown ? "booktransfer.option.flip.on" : "booktransfer.option.flip.off"));
+		ModConfig cfg = ModConfig.get();
+		this.modeButton.setMessage(Component.translatable(cfg.appendMode ? "booktransfer.option.mode.append" : "booktransfer.option.mode.replace"));
+		this.formatButton.setMessage(Component.translatable(cfg.formatting ? "booktransfer.option.format.on" : "booktransfer.option.format.off"));
+		this.flipButton.setMessage(Component.translatable(cfg.upsideDown ? "booktransfer.option.flip.on" : "booktransfer.option.flip.off"));
 	}
 
 	private void updateSignButton() {
@@ -247,8 +300,8 @@ public class TransferScreen extends Screen {
 	// ---------- редактирование ----------
 
 	/** Вставляет разметку в позицию курсора; выделенный текст оборачивается. */
-	private void insert(String before, String after) {
-		MultilineTextField field = ((MultiLineEditBoxAccessor) this.input).booktransfer$getTextField();
+	public void insert(String before, String after) {
+		MultilineTextField field = field();
 		String selected = field.hasSelection() ? field.getSelectedText() : "";
 		String closing = after;
 		// Цвет для выделенного куска закрываем сбросом, чтобы он не «протёк» дальше.
@@ -262,6 +315,33 @@ public class TransferScreen extends Screen {
 		this.setFocused(this.input);
 		draft = this.input.getValue();
 		markDirty();
+	}
+
+	/** Перетаскивание .txt файла в окно игры. */
+	@Override
+	public void onFilesDrop(List<Path> files) {
+		for (Path file : files) {
+			if (loadFile(file)) return;
+		}
+	}
+
+	private void openFileDialog() {
+		TextFiles.chooseFile(path -> this.minecraft.execute(() -> loadFile(path)));
+	}
+
+	private boolean loadFile(Path path) {
+		try {
+			String text = TextFiles.read(path);
+			this.input.setValue(text);
+			selectionStart = selectionEnd = -1;
+			continued = false;
+			this.notice = Component.translatable("booktransfer.file.loaded", path.getFileName().toString());
+			this.setFocused(this.input);
+			return true;
+		} catch (Exception e) {
+			this.notice = Component.translatable("booktransfer.file.error", e.getMessage() == null ? e.toString() : e.getMessage());
+			return false;
+		}
 	}
 
 	private void markDirty() {
@@ -279,11 +359,24 @@ public class TransferScreen extends Screen {
 	}
 
 	private List<String> buildPages() {
-		List<StyledRun> runs = MarkupParser.parse(this.input.getValue(), formatting);
-		if (upsideDown) runs = UpsideDown.flip(runs);
-		BookPaginator paginator = new BookPaginator(
-				text -> this.font.getSplitter().splitLines(text, PAGE_WIDTH, Style.EMPTY).size());
-		return paginator.paginate(runs);
+		ModConfig cfg = ModConfig.get();
+		List<StyledRun> runs = MarkupParser.parse(this.input.getValue(), cfg.formatting, cfg.presetsForParser());
+		if (cfg.upsideDown) runs = UpsideDown.flip(runs);
+		BookPaginator.Measurer measurer = new BookPaginator.Measurer() {
+			@Override
+			public int lines(String text) {
+				return TransferScreen.this.font.getSplitter().splitLines(text, PAGE_WIDTH, Style.EMPTY).size();
+			}
+
+			@Override
+			public int width(String text) {
+				return TransferScreen.this.font.width(text);
+			}
+		};
+		BookPaginator.Options options = new BookPaginator.Options(cfg.pageNumbers, cfg.tableOfContents,
+				cfg.chapterNewPage, cfg.appendMode ? this.existingPages : 0,
+				Component.translatable("booktransfer.toc.title").getString());
+		return new BookPaginator(measurer, options).paginate(runs);
 	}
 
 	private void recompute() {
@@ -304,12 +397,12 @@ public class TransferScreen extends Screen {
 		this.nextButton.active = this.previewPage < this.pages.size() - 1;
 	}
 
-	private boolean hasText() {
-		return !(this.pages.size() == 1 && this.pages.get(0).isEmpty());
+	private static boolean isBlank(List<String> pages) {
+		return pages.size() == 1 && pages.get(0).isEmpty();
 	}
 
 	private int totalPages() {
-		return (appendMode ? this.existingPages : 0) + (hasText() ? this.pages.size() : 0);
+		return (ModConfig.get().appendMode ? this.existingPages : 0) + (isBlank(this.pages) ? 0 : this.pages.size());
 	}
 
 	// ---------- перенос ----------
@@ -317,6 +410,7 @@ public class TransferScreen extends Screen {
 	private void transfer(Optional<String> title) {
 		LocalPlayer player = this.minecraft.player;
 		if (player == null || this.minecraft.getConnection() == null) return;
+		ModConfig cfg = ModConfig.get();
 		ItemStack stack = player.getItemInHand(this.hand);
 		if (!stack.is(Items.WRITABLE_BOOK)) {
 			player.sendOverlayMessage(Component.translatable("booktransfer.message.no_book").withStyle(ChatFormatting.RED));
@@ -325,30 +419,49 @@ public class TransferScreen extends Screen {
 		}
 
 		List<String> newPages = buildPages();
-		List<String> all = new ArrayList<>(appendMode ? existingPageTexts(stack) : List.of());
-		if (!(newPages.size() == 1 && newPages.get(0).isEmpty())) all.addAll(newPages);
-
-		int max = WritableBookContent.MAX_PAGES;
-		List<String> leftover = List.of();
-		if (all.size() > max) {
-			leftover = new ArrayList<>(all.subList(max, all.size()));
-			all = new ArrayList<>(all.subList(0, max));
-		}
+		List<String> all = new ArrayList<>(cfg.appendMode ? existingPageTexts(stack) : List.of());
+		if (!isBlank(newPages)) all.addAll(newPages);
 		if (all.isEmpty()) all.add("");
 
-		int slot = this.hand == InteractionHand.MAIN_HAND ? player.getInventory().getSelectedSlot() : Inventory.SLOT_OFFHAND;
-		this.minecraft.getConnection().send(new ServerboundEditBookPacket(slot, List.copyOf(all), title));
+		// Делим на тома по 100 страниц.
+		List<List<String>> volumes = new ArrayList<>();
+		for (int i = 0; i < all.size(); i += MAX_PAGES) {
+			volumes.add(new ArrayList<>(all.subList(i, Math.min(all.size(), i + MAX_PAGES))));
+		}
+		List<Integer> slots = new ArrayList<>();
+		slots.add(bookSlot(player));
+		if (cfg.multiVolume && volumes.size() > 1) slots.addAll(findSpareBooks(player));
+		int written = Math.min(volumes.size(), slots.size());
+
+		for (int v = 0; v < written; v++) {
+			int slot = slots.get(v);
+			List<String> volume = volumes.get(v);
+			Optional<String> volumeTitle = title.map(t -> written > 1 ? volumeTitle(t, v + 1) : t);
+			this.minecraft.getConnection().send(new ServerboundEditBookPacket(slot, List.copyOf(volume), volumeTitle));
+			if (title.isEmpty()) {
+				ItemStack target = slot == Inventory.SLOT_OFFHAND ? player.getOffhandItem() : player.getInventory().getItem(slot);
+				target.set(DataComponents.WRITABLE_BOOK_CONTENT,
+						new WritableBookContent(volume.stream().map(Filterable::passThrough).toList()));
+			}
+		}
+
+		List<String> leftover = new ArrayList<>();
+		for (int v = written; v < volumes.size(); v++) leftover.addAll(volumes.get(v));
 
 		if (leftover.isEmpty()) {
 			draft = "";
 			continued = false;
-			player.sendOverlayMessage(Component.translatable("booktransfer.message.done", all.size()).withStyle(ChatFormatting.GREEN));
+			Component msg = written > 1
+					? Component.translatable("booktransfer.message.done_volumes", all.size(), written)
+					: Component.translatable("booktransfer.message.done", all.size());
+			player.sendOverlayMessage(msg.copy().withStyle(ChatFormatting.GREEN));
 		} else {
 			// Остаток уже разложен и перевёрнут (если нужно) — дальше переносим как есть.
 			draft = MarkupParser.toAmpersand(String.join(" ", leftover));
 			continued = true;
-			upsideDown = false;
-			formatting = true;
+			cfg.upsideDown = false;
+			cfg.formatting = true;
+			cfg.save();
 			this.minecraft.keyboardHandler.setClipboard(draft);
 			player.sendSystemMessage(Component.translatable("booktransfer.message.overflow", leftover.size()).withStyle(ChatFormatting.GOLD));
 		}
@@ -357,9 +470,16 @@ public class TransferScreen extends Screen {
 			this.minecraft.gui.setScreen(null);
 			return;
 		}
-		WritableBookContent content = new WritableBookContent(all.stream().map(Filterable::passThrough).toList());
-		stack.set(DataComponents.WRITABLE_BOOK_CONTENT, content);
-		this.minecraft.gui.setScreen(new BookEditScreen(player, stack, this.hand, content));
+		WritableBookContent content = stack.get(DataComponents.WRITABLE_BOOK_CONTENT);
+		this.minecraft.gui.setScreen(new BookEditScreen(player, stack, this.hand,
+				content != null ? content : WritableBookContent.EMPTY));
+	}
+
+	/** «Название (2)» — не длиннее 32 символов. */
+	private static String volumeTitle(String title, int number) {
+		String suffix = " (" + number + ")";
+		int max = 32 - suffix.length();
+		return (title.length() > max ? title.substring(0, max).trim() : title) + suffix;
 	}
 
 	@Override
@@ -397,19 +517,37 @@ public class TransferScreen extends Screen {
 
 		// Сводка справа сверху.
 		int total = totalPages();
-		int max = WritableBookContent.MAX_PAGES;
-		graphics.text(this.font, Component.translatable("booktransfer.info.pages", total, max), px, 8, total > max ? RED : WHITE);
+		boolean multi = ModConfig.get().multiVolume;
+		int books = (total + MAX_PAGES - 1) / MAX_PAGES;
+		int canWrite = multi ? 1 + this.spareBooks : 1;
+		graphics.text(this.font, Component.translatable("booktransfer.info.pages", total, MAX_PAGES),
+				px, 8, books > canWrite ? RED : WHITE);
 		graphics.text(this.font, Component.translatable("booktransfer.info.chars", this.input.getValue().length()), px, 19, GRAY);
-		if (total > max) {
-			graphics.text(this.font, Component.translatable("booktransfer.info.overflow", total - max), px, 30, RED);
+		if (books > 1) {
+			Component line = multi
+					? Component.translatable("booktransfer.info.books", books, 1 + this.spareBooks)
+					: Component.translatable("booktransfer.info.overflow", total - MAX_PAGES);
+			graphics.text(this.font, line, px, 30, books > canWrite ? RED : YELLOW);
+		} else if (this.notice != null) {
+			graphics.text(this.font, this.notice, px, 30, YELLOW);
 		} else if (continued) {
-			graphics.text(this.font, Component.translatable("booktransfer.info.continued"), px, 30, 0xFFFFD060);
+			graphics.text(this.font, Component.translatable("booktransfer.info.continued"), px, 30, YELLOW);
 		}
 	}
 
 	@Override
 	public void removed() {
-		draft = this.input != null ? this.input.getValue() : draft;
+		if (this.input != null) {
+			draft = this.input.getValue();
+			MultilineTextField field = field();
+			if (field.hasSelection()) {
+				MultilineTextField.StringView sel = field.getSelected();
+				selectionStart = sel.beginIndex();
+				selectionEnd = sel.endIndex();
+			} else {
+				selectionStart = selectionEnd = field.cursor();
+			}
+		}
 		super.removed();
 	}
 }

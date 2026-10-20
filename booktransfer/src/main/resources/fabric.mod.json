@@ -12,6 +12,9 @@
 	"entrypoints": {
 		"client": [
 			"com.ambik1.booktransfer.BookTransferClient"
+		],
+		"modmenu": [
+			"com.ambik1.booktransfer.compat.ModMenuIntegration"
 		]
 	},
 	"depends": {
@@ -22,5 +25,8 @@
 	},
 	"mixins": [
 		"booktransfer.mixins.json"
-	]
+	],
+	"suggests": {
+		"modmenu": "*"
+	}
 }

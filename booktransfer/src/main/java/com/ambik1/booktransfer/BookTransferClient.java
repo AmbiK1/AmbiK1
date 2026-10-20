@@ -15,9 +15,11 @@ import net.minecraft.world.item.Items;
 
 public class BookTransferClient implements ClientModInitializer {
 	public static final String MOD_ID = "booktransfer";
+	public static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger(MOD_ID);
 
 	@Override
 	public void onInitializeClient() {
+		ModConfig.load();
 		UpsideDown.loadOverrides(FabricLoader.getInstance().getConfigDir().resolve("booktransfer-flip.txt"));
 
 		ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> {

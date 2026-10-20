@@ -82,7 +82,7 @@ public final class UpsideDown {
 	public static List<StyledRun> flip(List<StyledRun> runs) {
 		List<StyledRun> out = new ArrayList<>(runs.size());
 		for (StyledRun run : runs) {
-			out.add(new StyledRun(flip(run.text()), run.style()));
+			out.add(new StyledRun(flip(run.text()), run.style(), run.kind()));
 		}
 		Collections.reverse(out);
 		return out;

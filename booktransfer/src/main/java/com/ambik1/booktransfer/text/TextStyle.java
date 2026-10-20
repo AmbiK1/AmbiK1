@@ -13,6 +13,19 @@ public record TextStyle(char color, boolean bold, boolean italic, boolean strike
 		return new TextStyle(c, false, false, false, false, false);
 	}
 
+	/** Сменить только цвет, сохранив жирность и прочие стили (для радуги). */
+	public TextStyle recolor(char c) {
+		return new TextStyle(c, bold, italic, strike, underline, obfuscated);
+	}
+
+	/** Применить один код форматирования (без &amp;/§). */
+	public TextStyle apply(char code) {
+		code = Character.toLowerCase(code);
+		if ((code >= '0' && code <= '9') || (code >= 'a' && code <= 'f')) return withColor(code);
+		if (code == 'r') return PLAIN;
+		return with(code);
+	}
+
 	public TextStyle toggle(char flag) {
 		return switch (flag) {
 			case 'l' -> new TextStyle(color, !bold, italic, strike, underline, obfuscated);
