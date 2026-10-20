@@ -431,12 +431,13 @@ public class TransferScreen extends Screen {
 		List<Integer> slots = new ArrayList<>();
 		slots.add(bookSlot(player));
 		if (cfg.multiVolume && volumes.size() > 1) slots.addAll(findSpareBooks(player));
-		int written = Math.min(volumes.size(), slots.size());
+		final int written = Math.min(volumes.size(), slots.size());
 
 		for (int v = 0; v < written; v++) {
 			int slot = slots.get(v);
 			List<String> volume = volumes.get(v);
-			Optional<String> volumeTitle = title.map(t -> written > 1 ? volumeTitle(t, v + 1) : t);
+			int volumeNumber = v + 1;
+			Optional<String> volumeTitle = title.map(t -> written > 1 ? volumeTitle(t, volumeNumber) : t);
 			this.minecraft.getConnection().send(new ServerboundEditBookPacket(slot, List.copyOf(volume), volumeTitle));
 			if (title.isEmpty()) {
 				ItemStack target = slot == Inventory.SLOT_OFFHAND ? player.getOffhandItem() : player.getInventory().getItem(slot);
