@@ -1,0 +1,19 @@
+{
+	"schemaVersion": 1,
+	"id": "booktransfer",
+	"version": "${version}",
+	"name": "Book Transfer",
+	"description": "Переносит текст в книгу с пером: автоматическая разбивка по страницам, форматирование, перевёрнутый текст.",
+	"authors": ["AmbiK1"],
+	"license": "MIT",
+	"environment": "client",
+	"entrypoints": {
+		"client": ["com.ambik1.booktransfer.BookTransferClient"]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

@@ -1,0 +1,60 @@
+name: Build Book Transfer mod
+
+on:
+  push:
+    paths:
+      - 'booktransfer/**'
+      - '.github/workflows/booktransfer.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: booktransfer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build
+        run: |
+          chmod +x gradlew
+          ./gradlew build --stacktrace
+      - name: Dump vanilla API (temporary)
+        if: always()
+        run: |
+          JAR=$(find ~/.gradle .gradle -name 'minecraft*.jar' 2>/dev/null | grep -v sources | head -50)
+          echo "$JAR"
+          CP=$(echo "$JAR" | tr '\n' ':')
+          for c in \
+            net.minecraft.client.gui.screens.inventory.BookEditScreen \
+            net.minecraft.client.gui.components.MultiLineEditBox \
+            'net.minecraft.client.gui.components.MultiLineEditBox$Builder' \
+            net.minecraft.client.gui.components.MultilineTextField \
+            net.minecraft.client.gui.components.AbstractTextAreaWidget \
+            net.minecraft.client.gui.components.MultiLineTextWidget \
+            net.minecraft.client.gui.components.StringWidget \
+            net.minecraft.client.gui.components.EditBox \
+            net.minecraft.client.gui.GuiGraphicsExtractor \
+            net.minecraft.client.gui.Font \
+            net.minecraft.client.StringSplitter \
+            net.minecraft.network.protocol.game.ServerboundEditBookPacket \
+            net.minecraft.world.item.component.WritableBookContent \
+            net.minecraft.server.network.Filterable \
+            net.minecraft.world.entity.player.Inventory \
+            net.minecraft.client.KeyboardHandler \
+            net.minecraft.client.gui.screens.Screen \
+            net.minecraft.client.player.LocalPlayer \
+            net.minecraft.client.gui.components.Button \
+            ; do echo "=== $c"; javap -cp "$CP" -public "$c" || true; done
+          echo "=== book-related classes"
+          for j in $JAR; do unzip -l "$j" | grep -iE 'book|MultiLine' | head -40; done
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: booktransfer-mod
+          path: booktransfer/build/libs/*.jar
