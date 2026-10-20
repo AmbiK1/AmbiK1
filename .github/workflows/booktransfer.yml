@@ -24,18 +24,7 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew build --stacktrace
-      - name: Dump vanilla API (temporary)
-        if: always()
-        run: |
-          CP=$(find ~/.gradle -name 'minecraft-merged-deobf*.jar' | head -1)
-          echo "=== P BookEditScreen"; javap -cp "$CP" -p -constants net.minecraft.client.gui.screens.inventory.BookEditScreen
-          echo "=== C BookEditScreen"; javap -cp "$CP" -p -c net.minecraft.client.gui.screens.inventory.BookEditScreen | grep -E "^  [a-z].*\(|invoke|getstatic|bipush|sipush|ldc" | head -400
-          echo "=== P BookViewScreen"; javap -cp "$CP" -p -constants net.minecraft.client.gui.screens.inventory.BookViewScreen
-          echo "=== P MultiLineEditBox"; javap -cp "$CP" -p net.minecraft.client.gui.components.MultiLineEditBox
-          echo "=== C Server book"; javap -cp "$CP" -p -c net.minecraft.server.network.ServerGamePacketListenerImpl | awk '/handleEditBook|updateBookContents|updateBookPages|signBook/{f=1} f{print} /^$/{f=0}' | grep -E "^  [a-z].*\(|invoke" | head -120
-          echo "=== C MultilineTextField insert"; javap -cp "$CP" -p -c net.minecraft.client.gui.components.MultilineTextField | awk '/public void insertText/{f=1} f{print} /return$/{if(f)exit}' | grep invoke
       - uses: actions/upload-artifact@v4
-        if: success()
         with:
           name: booktransfer-mod
           path: booktransfer/build/libs/*.jar

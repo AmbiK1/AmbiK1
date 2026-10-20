@@ -1,0 +1,11 @@
+{
+	"required": true,
+	"package": "com.ambik1.booktransfer.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"MultiLineEditBoxAccessor"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}
